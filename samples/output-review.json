@@ -1,0 +1,12 @@
+{
+  "summary": "A new `Brand` function has been added to the `card` package, providing an alias for the `Issuer` function to return the card network name.",
+  "highlights": [
+    "Introduced `Brand` function as an alias for `Issuer`.",
+    "Improved readability for card network identification at call sites."
+  ],
+  "concerns": [
+    "Consider adding a test for `Brand` so the alias is covered.",
+    "Document that `Brand` simply delegates to `Issuer`."
+  ],
+  "secrets": []
+}

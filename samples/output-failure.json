@@ -1,0 +1,6 @@
+{
+  "error_type": "Test Failure",
+  "root_cause": "The unit test `TestIssuer` failed because the `Issuer` function returned \"Amex\" but was expected to return \"Visa\" for the input \"340000000000009\". This indicates a mismatch between the implementation and the test expectation.",
+  "file": "card_test.go",
+  "suggested_fix": "Examine the `Issuer` function in `card.go` and the `TestIssuer` case. Either fix the implementation so the issuer is correctly identified, or update the test expectation if the current behaviour is correct."
+}

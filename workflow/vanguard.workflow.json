@@ -1,0 +1,1020 @@
+{
+  "name": "Vanguard",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "github",
+        "options": {}
+      },
+      "name": "Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2.1,
+      "position": [
+        -400,
+        400
+      ],
+      "webhookId": "vanguard-github",
+      "id": "619a6b11-d78d-4269-9d6f-7c94079f3062"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "combinator": "and",
+          "conditions": [
+            {
+              "leftValue": "={{ $json.body.workflow_run.name }}",
+              "rightValue": "PR Check",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            },
+            {
+              "leftValue": "={{ $json.body.action }}",
+              "rightValue": "completed",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            }
+          ]
+        },
+        "options": {}
+      },
+      "name": "Only PR Check",
+      "type": "n8n-nodes-base.filter",
+      "typeVersion": 2.2,
+      "position": [
+        -176,
+        400
+      ],
+      "id": "30b44b8c-fe88-42da-8d1e-8b7bac629e0b"
+    },
+    {
+      "parameters": {
+        "rules": {
+          "values": [
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "loose",
+                  "version": 2
+                },
+                "combinator": "and",
+                "conditions": [
+                  {
+                    "leftValue": "={{ $json.body.workflow_run.conclusion }}",
+                    "rightValue": "success",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ]
+              }
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "loose",
+                  "version": 2
+                },
+                "combinator": "and",
+                "conditions": [
+                  {
+                    "leftValue": "={{ $json.body.workflow_run.conclusion }}",
+                    "rightValue": "failure",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ]
+              }
+            }
+          ]
+        },
+        "options": {}
+      },
+      "name": "Route by Result",
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 3.2,
+      "position": [
+        48,
+        400
+      ],
+      "id": "2ac66980-6c9d-4016-b102-9353e780025c"
+    },
+    {
+      "parameters": {
+        "url": "=https://api.github.com/repos/{{ $json.body.repository.full_name }}/pulls/{{ $json.body.workflow_run.pull_requests[0].number }}",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Accept",
+              "value": "application/vnd.github+json"
+            },
+            {
+              "name": "User-Agent",
+              "value": "vanguard"
+            },
+            {
+              "name": "Accept",
+              "value": "application/vnd.github.v3.diff"
+            }
+          ]
+        },
+        "options": {
+          "response": {
+            "response": {
+              "responseFormat": "text"
+            }
+          }
+        }
+      },
+      "name": "Get PR Diff",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        272,
+        208
+      ],
+      "id": "e63aa304-d6ca-4ad7-bca1-bdc71c300480",
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "7oXUbJhGuEqqUGMh",
+          "name": "GitHub"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "\nconst diff = ($json.data || '').slice(0, 12000);\nconst b = $('Webhook').first().json.body;\nconst wr = b.workflow_run;\nconst system = [\n  'You are a senior software engineer writing a concise, helpful pull-request review for the author.',\n  'Respond ONLY with strict JSON matching this shape, nothing else:',\n  '{\"summary\": string, \"highlights\": string[], \"concerns\": string[], \"secrets\": string[]}',\n  '- summary: 1-2 sentences on WHAT changed and the intent (not a line-by-line list).',\n  '- highlights: 2-4 short notable changes; skip trivia like blank lines or comments.',\n  '- concerns: things worth double-checking (tests, edge cases, naming, security). [] if none.',\n  '- secrets: hardcoded API keys/tokens/passwords/private keys in ADDED lines. [] if none.',\n  'No markdown, no code fences, no extra text.'\n].join('\\n');\nreturn [{ json: {\n  geminiBody: { model: 'google/gemini-2.5-flash', messages: [ {role:'system', content: system}, {role:'user', content: 'DIFF:\\n' + diff} ] },\n  repo: b.repository.full_name, pr: wr.pull_requests[0].number, sha: wr.head_sha\n} }];\n"
+      },
+      "name": "Build Review Prompt",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        480,
+        208
+      ],
+      "id": "d89122bf-361f-4dd1-9417-04160bb9a6d5"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $env.GEMINI_URL }}",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify($json.geminiBody) }}",
+        "options": {}
+      },
+      "name": "PR Reviewer",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        704,
+        208
+      ],
+      "retryOnFail": true,
+      "maxTries": 4,
+      "waitBetweenTries": 3000,
+      "id": "c1468abe-159b-4d33-9904-212a25ceee47",
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "NqBEgkqbOLF7u7gs",
+          "name": "Gemini API"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "\nlet txt=''; try{ txt=$json.choices[0].message.content; }catch(e){}\ntxt=String(txt).trim().replace(/^```(?:json)?/i,'').replace(/```$/i,'').trim();\nlet r={}; try{ r=JSON.parse(txt); }catch(e){ r={summary:'(could not parse review)',highlights:[],secrets:[],concerns:[]}; }\nconst ctx=$('Build Review Prompt').first().json;\nconst secrets=r.secrets||[]; const concerns=r.concerns||[]; const highlights=r.highlights||[];\nconst lines=[];\nlines.push('## \u2705 Automated Code Review');\nlines.push('');\nlines.push('_CI passed. Here\u2019s a quick review while you wait for sign-off._');\nlines.push('');\nlines.push('**Summary**  ');\nlines.push(r.summary||'');\nif(highlights.length){ lines.push(''); lines.push('**What changed**'); highlights.forEach(h=>lines.push('- '+h)); }\nif(concerns.length){ lines.push(''); lines.push('**Worth a look**'); concerns.forEach(c=>lines.push('- '+c)); }\nelse { lines.push(''); lines.push('No blocking concerns spotted. \u2705'); }\nif(secrets.length){ lines.push(''); lines.push('> \ud83d\udd10 **Possible hardcoded secret:** '+secrets.join(', ')); }\nlines.push('');\nlines.push('---');\nlines.push('<sub>Automated review \u00b7 a maintainer approves or requests changes by email.</sub>');\nconst comment=lines.join('\\n')+'\\n<!--auto-review-->';\nconst prUrl='https://github.com/'+ctx.repo+'/pull/'+ctx.pr;\nconst esc=s=>String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');\nlet review_html='<p style=\"margin:0 0 10px\">'+esc(r.summary)+'</p>';\nif(highlights.length){ review_html+='<div style=\"font-weight:600;margin:8px 0 4px\">What changed</div><ul style=\"margin:0 0 6px;padding-left:18px\">'+highlights.map(h=>'<li>'+esc(h)+'</li>').join('')+'</ul>'; }\nif(concerns.length){ review_html+='<div style=\"font-weight:600;margin:8px 0 4px\">Worth a look</div><ul style=\"margin:0;padding-left:18px\">'+concerns.map(c=>'<li>'+esc(c)+'</li>').join('')+'</ul>'; }\nif(secrets.length){ review_html+='<p style=\"color:#b00020;margin:8px 0 0\">\ud83d\udd10 Possible hardcoded secret: '+esc(secrets.join(', '))+'</p>'; }\nreturn [{ json:{ repo:ctx.repo, pr:ctx.pr, sha:ctx.sha, review:r, comment, prUrl, review_html,\n  email_subject:'Action needed \u00b7 PR #'+ctx.pr+' passed CI in '+ctx.repo } }];\n"
+      },
+      "name": "Parse Review",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        928,
+        208
+      ],
+      "id": "2a0b090d-fcff-45d7-a0c2-497ad26d5989"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "=https://api.github.com/repos/{{ $json.repo }}/issues/{{ $json.pr }}/comments",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Accept",
+              "value": "application/vnd.github+json"
+            },
+            {
+              "name": "User-Agent",
+              "value": "vanguard"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ body: $json.comment }) }}",
+        "options": {}
+      },
+      "name": "Post Review Comment",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1152,
+        208
+      ],
+      "id": "a1fc5cec-dcf1-4eeb-8dc0-79b362808be5",
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "7oXUbJhGuEqqUGMh",
+          "name": "GitHub"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $env.EMAIL_SERVER_URL }}",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ to: $env.REVIEWER_EMAIL, subject: $('Parse Review').first().json.email_subject, body: '<div style=\"font-family:-apple-system,Segoe UI,Roboto,Helvetica,sans-serif;max-width:560px;margin:0 auto;color:#24292f;border:1px solid #d0d7de;border-radius:10px;overflow:hidden\">'+ '<div style=\"background:#1f883d;color:#ffffff;padding:16px 20px;font-size:18px;font-weight:600\">\\u2705 PR #' + $('Parse Review').first().json.pr + ' passed CI</div>'+ '<div style=\"padding:20px\">'+ '<p style=\"margin:0 0 16px;color:#57606a\">' + $('Parse Review').first().json.repo + ' &middot; waiting for your sign-off</p>'+ '<div style=\"background:#f6f8fa;border:1px solid #d0d7de;border-radius:8px;padding:14px 16px;margin:0 0 20px\">'+ '<div style=\"font-weight:600;margin:0 0 6px\">Automated review</div>' + $('Parse Review').first().json.review_html + '</div>'+ '<a href=\"' + $execution.resumeFormUrl + '\" style=\"display:inline-block;background:#1f883d;color:#ffffff;padding:12px 28px;border-radius:6px;text-decoration:none;font-weight:600\">Review &amp; decide &rarr;</a>'+ '<p style=\"margin:16px 0 6px\"><a href=\"' + $('Parse Review').first().json.prUrl + '\" style=\"color:#0969da;text-decoration:none\">View PR #' + $('Parse Review').first().json.pr + ' on GitHub &rarr;</a></p>'+ '<p style=\"color:#8c959f;font-size:12px;border-top:1px solid #eaecef;padding-top:12px;margin-top:16px\">Opens a short form to <b>approve</b> or <b>request changes</b> (with a note). The link works once.</p>'+ '</div></div>', cc: [] }) }}",
+        "options": {}
+      },
+      "name": "Send Approval Email",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1360,
+        208
+      ],
+      "id": "7d0bfedf-a487-4445-be0f-b830ed0deccc"
+    },
+    {
+      "parameters": {
+        "resume": "form",
+        "formTitle": "=Review PR #{{ $('Parse Review').first().json.pr }}",
+        "formDescription": "={{ $('Parse Review').first().json.review.summary }}",
+        "formFields": {
+          "values": [
+            {
+              "fieldLabel": "Decision",
+              "fieldType": "dropdown",
+              "fieldOptions": {
+                "values": [
+                  {
+                    "option": "Approve"
+                  },
+                  {
+                    "option": "Request changes"
+                  }
+                ]
+              },
+              "requiredField": true
+            },
+            {
+              "fieldLabel": "Note",
+              "fieldType": "textarea",
+              "placeholder": "Optional note for the author"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "name": "Wait for Human",
+      "type": "n8n-nodes-base.wait",
+      "typeVersion": 1.1,
+      "position": [
+        1584,
+        208
+      ],
+      "webhookId": "vanguard-approval",
+      "id": "23b1d644-04f3-4d53-a616-0500e759a3e4"
+    },
+    {
+      "parameters": {
+        "rules": {
+          "values": [
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "loose",
+                  "version": 2
+                },
+                "combinator": "and",
+                "conditions": [
+                  {
+                    "leftValue": "={{ $json.Decision }}",
+                    "rightValue": "Approve",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ]
+              }
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "loose",
+                  "version": 2
+                },
+                "combinator": "and",
+                "conditions": [
+                  {
+                    "leftValue": "={{ $json.Decision }}",
+                    "rightValue": "Request changes",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ]
+              }
+            }
+          ]
+        },
+        "options": {}
+      },
+      "name": "Approved?",
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 3.2,
+      "position": [
+        1808,
+        208
+      ],
+      "id": "5b59c568-8a0a-4b8e-aca3-358f8877ee9f"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "=https://api.github.com/repos/{{ $('Parse Review').first().json.repo }}/issues/{{ $('Parse Review').first().json.pr }}/labels",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Accept",
+              "value": "application/vnd.github+json"
+            },
+            {
+              "name": "User-Agent",
+              "value": "vanguard"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ labels: ['approved'] }) }}",
+        "options": {}
+      },
+      "name": "Add Label",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        2032,
+        112
+      ],
+      "id": "235418a5-ed42-4b18-9442-a4683966f823",
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "7oXUbJhGuEqqUGMh",
+          "name": "GitHub"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "=https://api.github.com/repos/{{ $('Parse Review').first().json.repo }}/issues/{{ $('Parse Review').first().json.pr }}/comments",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Accept",
+              "value": "application/vnd.github+json"
+            },
+            {
+              "name": "User-Agent",
+              "value": "vanguard"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ body: '## \u2705 Approved by a maintainer\\n\\nLabeled `approved` \u2014 ready to merge.' + ( $('Wait for Human').first().json.Note ? ('\\n\\n> ' + $('Wait for Human').first().json.Note) : '' ) }) }}",
+        "options": {}
+      },
+      "name": "Approve Comment",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        2240,
+        112
+      ],
+      "id": "29fe0455-2a87-4883-b1d3-24af2e18c9aa",
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "7oXUbJhGuEqqUGMh",
+          "name": "GitHub"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "=https://api.github.com/repos/{{ $('Parse Review').first().json.repo }}/issues/{{ $('Parse Review').first().json.pr }}/comments",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Accept",
+              "value": "application/vnd.github+json"
+            },
+            {
+              "name": "User-Agent",
+              "value": "vanguard"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ body: '## \ud83d\udd04 Changes requested by a maintainer\\n\\n' + ( $('Wait for Human').first().json.Note ? $('Wait for Human').first().json.Note : '_No note provided._' ) }) }}",
+        "options": {}
+      },
+      "name": "Reject Comment",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        2032,
+        304
+      ],
+      "id": "7d67673e-614d-43f5-8766-2f1a255ec099",
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "7oXUbJhGuEqqUGMh",
+          "name": "GitHub"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "url": "=https://api.github.com/repos/{{ $json.body.repository.full_name }}/actions/runs/{{ $json.body.workflow_run.id }}/jobs",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Accept",
+              "value": "application/vnd.github+json"
+            },
+            {
+              "name": "User-Agent",
+              "value": "vanguard"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "name": "Get Run Jobs",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        272,
+        608
+      ],
+      "id": "eeed9791-a58a-434a-b33d-7cf1cbfd3c05",
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "7oXUbJhGuEqqUGMh",
+          "name": "GitHub"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "\nconst jobs=$json.jobs||[];\nconst failed=jobs.find(j=>j.conclusion==='failure')||jobs[0]||{};\nconst b=$('Webhook').first().json.body; const wr=b.workflow_run;\nreturn [{ json:{ repo:b.repository.full_name, job_id:failed.id, job_name:failed.name,\n  run_id:wr.id, head_sha:wr.head_sha, pr:(wr.pull_requests[0]||{}).number } }];\n"
+      },
+      "name": "Pick Failed Job",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        480,
+        608
+      ],
+      "id": "4b21fbd6-97b1-4fa7-8c15-26fb731ed75e"
+    },
+    {
+      "parameters": {
+        "url": "=https://api.github.com/repos/{{ $json.repo }}/actions/jobs/{{ $json.job_id }}/logs",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Accept",
+              "value": "application/vnd.github+json"
+            },
+            {
+              "name": "User-Agent",
+              "value": "vanguard"
+            }
+          ]
+        },
+        "options": {
+          "redirect": {
+            "redirect": {
+              "followRedirects": false
+            }
+          },
+          "response": {
+            "response": {
+              "fullResponse": true,
+              "neverError": true
+            }
+          }
+        }
+      },
+      "name": "Get Job Log",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        704,
+        608
+      ],
+      "id": "11cb7e9e-e648-4d21-8434-1fc9525208dc",
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "7oXUbJhGuEqqUGMh",
+          "name": "GitHub"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "\nconst loc=($json.headers&&($json.headers.location||$json.headers.Location))||'';\nconst ctx=$('Pick Failed Job').first().json;\nreturn [{ json:{ logUrl:loc, repo:ctx.repo, job_name:ctx.job_name, pr:ctx.pr, head_sha:ctx.head_sha } }];\n"
+      },
+      "name": "Extract Log URL",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        928,
+        608
+      ],
+      "id": "c7f00ae3-9501-445b-8d38-a2fab11a5358"
+    },
+    {
+      "parameters": {
+        "url": "={{ $json.logUrl }}",
+        "options": {
+          "response": {
+            "response": {
+              "responseFormat": "text"
+            }
+          }
+        }
+      },
+      "name": "Fetch Log",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1152,
+        608
+      ],
+      "id": "5799575f-3512-4d0e-98f7-6a5858c2e5c2"
+    },
+    {
+      "parameters": {
+        "jsCode": "\nconst log=($json.data||'').slice(-7000);\nconst ctx=$('Extract Log URL').first().json;\nconst system=[\n  'You are a CI failure analyst reviewing a failed GitHub Actions job log.',\n  'Respond ONLY with strict JSON matching this shape, nothing else:',\n  '{\"error_type\": string, \"root_cause\": string, \"file\": string, \"suggested_fix\": string}',\n  'Identify the error type, the root cause, the most likely file, and a concrete suggested fix.',\n  'No markdown, no code fences, no extra text.'\n].join('\\n');\nreturn [{ json:{\n  geminiBody:{ model:'google/gemini-2.5-flash', messages:[ {role:'system', content: system}, {role:'user', content: 'JOB: '+(ctx.job_name||'')+'\\nLOG TAIL:\\n'+log} ] },\n  repo:ctx.repo, pr:ctx.pr, head_sha:ctx.head_sha\n} }];\n"
+      },
+      "name": "Build Log Prompt",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1360,
+        608
+      ],
+      "id": "92662cfc-837b-4b4a-914f-41e61acad63b"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $env.GEMINI_URL }}",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify($json.geminiBody) }}",
+        "options": {}
+      },
+      "name": "Failure Analyzer",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1584,
+        608
+      ],
+      "retryOnFail": true,
+      "maxTries": 4,
+      "waitBetweenTries": 3000,
+      "id": "e01fb46c-8bb6-4a36-b4d8-4ad56e6ae667",
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "NqBEgkqbOLF7u7gs",
+          "name": "Gemini API"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "\nlet txt=''; try{ txt=$json.choices[0].message.content; }catch(e){}\ntxt=String(txt).trim().replace(/^```(?:json)?/i,'').replace(/```$/i,'').trim();\nlet d={}; try{ d=JSON.parse(txt); }catch(e){ d={error_type:'Build failure',root_cause:txt,suggested_fix:''}; }\nconst ctx=$('Build Log Prompt').first().json;\nconst lines=[];\nlines.push('## \u274c Build Failed');\nlines.push('');\nlines.push('**What went wrong:** '+(d.error_type||''));\nlines.push('');\nlines.push('**Root cause:** '+(d.root_cause||''));\nif(d.file){ lines.push(''); lines.push('**File:** `'+d.file+'`'); }\nlines.push('');\nlines.push('**Suggested fix:**');\nlines.push('');\nlines.push(d.suggested_fix||'');\nconst comment=lines.join('\\n')+'\\n<!--auto-build-->';\nreturn [{ json:{ repo:ctx.repo, pr:ctx.pr, comment } }];\n"
+      },
+      "name": "Parse Diagnosis",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1808,
+        608
+      ],
+      "id": "1e02a777-46be-411c-ab78-c8faef920fe5"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "=https://api.github.com/repos/{{ $json.repo }}/issues/{{ $json.pr }}/comments",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Accept",
+              "value": "application/vnd.github+json"
+            },
+            {
+              "name": "User-Agent",
+              "value": "vanguard"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ body: $json.comment }) }}",
+        "options": {}
+      },
+      "name": "Post Build Comment",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        2032,
+        608
+      ],
+      "id": "215c3565-219b-403e-b90b-06a19ad16bea",
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "7oXUbJhGuEqqUGMh",
+          "name": "GitHub"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "content": "# Vanguard\n**PR Review Agent**\n\n_pass \u2192 AI review + human approval_\n_fail \u2192 AI failure diagnosis_",
+        "height": 150,
+        "width": 900,
+        "color": 5
+      },
+      "name": "note-title",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        768,
+        -144
+      ],
+      "id": "6ba227c8-58fc-4f1d-8a56-d6d3d70e13a6"
+    },
+    {
+      "parameters": {
+        "content": "## 1 \u00b7 Trigger & Routing\n\n**Webhook** receives GitHub `workflow_run` (CI finished) \u2192 **Filter** keeps only completed *PR Check* runs \u2192 **Switch** routes on CI result.\n\n*All deterministic.*",
+        "height": 346,
+        "width": 632,
+        "color": 7
+      },
+      "name": "note-trigger",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        -464,
+        240
+      ],
+      "id": "093e3793-5a66-44a2-8f52-8a81d9cc40b0"
+    },
+    {
+      "parameters": {
+        "content": "## 2 \u00b7 CI Passed \u2192 AI Review + Human Approval\n\nFetch diff \u2192 **Gemini reviews** (JSON) \u2192 comment \u2192 email a **review form** \u2192 **wait** for the human \u2192 Approve labels `approved`, Request-changes posts the note.\n\n*AI reviews. Code routes. Human decides.*",
+        "height": 440,
+        "width": 2470,
+        "color": 4
+      },
+      "name": "note-success",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        224,
+        32
+      ],
+      "id": "9b985c77-f02b-41fa-a3f2-7584c1d86735"
+    },
+    {
+      "parameters": {
+        "content": "## 3 \u00b7 CI Failed \u2192 AI Failure Diagnosis\n\nFind failed job \u2192 fetch raw log \u2192 **Gemini explains it** (error, root cause, file, fix) \u2192 comment on the PR.",
+        "height": 250,
+        "width": 2030,
+        "color": 3
+      },
+      "name": "note-failure",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        224,
+        512
+      ],
+      "id": "d789a32c-c65d-478a-8aa9-1b707878dc62"
+    }
+  ],
+  "connections": {
+    "Webhook": {
+      "main": [
+        [
+          {
+            "node": "Only PR Check",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Only PR Check": {
+      "main": [
+        [
+          {
+            "node": "Route by Result",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Route by Result": {
+      "main": [
+        [
+          {
+            "node": "Get PR Diff",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Get Run Jobs",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get PR Diff": {
+      "main": [
+        [
+          {
+            "node": "Build Review Prompt",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build Review Prompt": {
+      "main": [
+        [
+          {
+            "node": "PR Reviewer",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "PR Reviewer": {
+      "main": [
+        [
+          {
+            "node": "Parse Review",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse Review": {
+      "main": [
+        [
+          {
+            "node": "Post Review Comment",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Post Review Comment": {
+      "main": [
+        [
+          {
+            "node": "Send Approval Email",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Send Approval Email": {
+      "main": [
+        [
+          {
+            "node": "Wait for Human",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Wait for Human": {
+      "main": [
+        [
+          {
+            "node": "Approved?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Approved?": {
+      "main": [
+        [
+          {
+            "node": "Add Label",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Reject Comment",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Add Label": {
+      "main": [
+        [
+          {
+            "node": "Approve Comment",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Run Jobs": {
+      "main": [
+        [
+          {
+            "node": "Pick Failed Job",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Pick Failed Job": {
+      "main": [
+        [
+          {
+            "node": "Get Job Log",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Job Log": {
+      "main": [
+        [
+          {
+            "node": "Extract Log URL",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Extract Log URL": {
+      "main": [
+        [
+          {
+            "node": "Fetch Log",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch Log": {
+      "main": [
+        [
+          {
+            "node": "Build Log Prompt",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build Log Prompt": {
+      "main": [
+        [
+          {
+            "node": "Failure Analyzer",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Failure Analyzer": {
+      "main": [
+        [
+          {
+            "node": "Parse Diagnosis",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse Diagnosis": {
+      "main": [
+        [
+          {
+            "node": "Post Build Comment",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate"
+  }
+}

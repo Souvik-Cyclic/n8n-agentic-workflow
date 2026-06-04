@@ -1,0 +1,40 @@
+# Self-host n8n for Vanguard.
+# Copy .env.example -> .env, fill it in, then: docker compose up -d
+# Secrets (GitHub PAT, Gemini key) are NOT here — add those in the n8n UI as credentials.
+services:
+  n8n:
+    image: docker.n8n.io/n8nio/n8n:latest
+    container_name: n8n
+    restart: unless-stopped
+    ports:
+      - "5678:5678"
+    environment:
+      # public URL (so GitHub can reach the webhook + approval-form resume links work)
+      - N8N_HOST=${N8N_HOST}
+      - WEBHOOK_URL=${WEBHOOK_URL}
+      - N8N_EDITOR_BASE_URL=${WEBHOOK_URL}
+      - N8N_PROTOCOL=https
+      - N8N_PORT=5678
+      - N8N_SECURE_COOKIE=false
+      - GENERIC_TIMEZONE=${GENERIC_TIMEZONE:-UTC}
+      # let workflow expressions read the $env vars below
+      - N8N_BLOCK_ENV_ACCESS_IN_NODE=false
+      # ── config the Vanguard workflow reads via $env (NOT secrets) ──
+      - GEMINI_URL=${GEMINI_URL}
+      - EMAIL_SERVER_URL=${EMAIL_SERVER_URL}
+      - REVIEWER_EMAIL=${REVIEWER_EMAIL}
+    volumes:
+      - n8n_data:/home/node/.n8n
+
+  # Optional: exposes the local n8n to the internet so GitHub's webhook can reach it.
+  # Read the printed https URL from the logs and put it in .env (N8N_HOST / WEBHOOK_URL).
+  cloudflared:
+    image: cloudflare/cloudflared:latest
+    container_name: cloudflared
+    restart: unless-stopped
+    command: tunnel --no-autoupdate --url http://n8n:5678
+    depends_on:
+      - n8n
+
+volumes:
+  n8n_data:

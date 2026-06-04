@@ -1,0 +1,18 @@
+{
+  "action": "completed",
+  "workflow_run": {
+    "name": "PR Check",
+    "conclusion": "success",
+    "head_branch": "demo/brand",
+    "head_sha": "95a4064482bf33afafecf4e2b791f90a26929144",
+    "id": 26970767018,
+    "pull_requests": [
+      {
+        "number": 10
+      }
+    ]
+  },
+  "repository": {
+    "full_name": "Souvik-Cyclic/card-validator"
+  }
+}
